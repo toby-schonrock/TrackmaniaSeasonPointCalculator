@@ -1,140 +1,84 @@
-<html>
+<!doctype html>
+
+<html lang="en" data-bs-theme="dark">
 
 <head>
 	<title>Trackmania Season Point Calculator</title>
 	<link rel="stylesheet" href="styles.css" />
-	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css"
-		integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
-	<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"
-		integrity="sha384-/KNQL8Nu5gCHLqwqfQjA689Hhoqgi2S84SNUxC3roTe4EhJ9AfLkp8QiQcU8AMzI"
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet"
+		integrity="sha384-4bw+/aepP/YC94hEpVNVgiZdgIC5+VKNBQNGCHeKRQN+PtmoHDEXuppvnDJzQIu9" crossorigin="anonymous">
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"
+		integrity="sha384-HwwvtgBNo3bZJJLYd8oVXjrBZt8cqVSpeBNS5n7C8IVInixGAoxmnlMuBnhbgrkm"
 		crossorigin="anonymous"></script>
 	<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
 		integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
 		crossorigin="anonymous"></script>
-	<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"
-		integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo"
-		crossorigin="anonymous"></script>
-	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"
-		integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI"
+	<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"
+		integrity="sha384-/KNQL8Nu5gCHLqwqfQjA689Hhoqgi2S84SNUxC3roTe4EhJ9AfLkp8QiQcU8AMzI"
 		crossorigin="anonymous"></script>
 	<script src="main.js"></script>
 </head>
 
 <body>
-	<div class="form-group text-center">
-		<br>
-		<h2>Trackmania Season Point Calculator <span style="font-size:16px;">by geri43</span></h2>
-		<div class="center">
-			<input placeholder="player id" type="text" id="id-input">
-			<button id="button" class="btn btn-secondary" style="margin:5px;">Get Data</button>
+	<template id="track-template">
+		<div class="col">
+			<div class="container px-2 py-2 track">
+				<div class="d-flex flex-row">
+					<p id="track-number" class="fs-5 p-1 me-2 border border-dark rounded align-self-start">track-number
+					</p>
+					<div>
+						<div class="input-group mb-1">
+							<span class="input-group-text">rank</span>
+							<input type="text" id="rank-field" placeholder="rank" class="form-control rank">
+						</div>
+						<div class="input-group">
+							<span class="input-group-text">points</span>
+							<input class="form-control" type="text" value="0" id="points-display" readonly>
+						</div>
+					</div>
+				</div>
+			</div>
 		</div>
-		<table cellspacing="0" cellpadding="0" style="table-layout:fixed;margin: 0 auto !important">
-			<tr id="tdRankpoint">
-				<td>Rank</td>
-				<td>Point</td>
-				<td>Rank</td>
-				<td>Point</td>
-				<td>Rank</td>
-				<td>Point</td>
-				<td>Rank</td>
-				<td>Point</td>
-				<td>Rank</td>
-				<td>Point</td>
-			</tr>
-			<tr>
-				<td colspan="2">
-					<p style="background-color:#ffffff;padding:5px;margin:7px;margin-bottom:14px;"></p>
-				</td>
-				<td colspan="2">
-					<p style="background-color:#6efaa1;padding:5px;margin:7px;margin-bottom:14px;"></p>
-				</td>
-				<td colspan="2">
-					<p style="background-color:#0033ff;padding:5px;margin:7px;margin-bottom:14px;"></p>
-				</td>
-				<td colspan="2">
-					<p style="background-color:#ff0000;padding:5px;margin:7px;margin-bottom:14px;"></p>
-				</td>
-				<td colspan="2">
-					<p style="background-color:#000000;padding:5px;margin:7px;margin-bottom:14px;"></p>
-				</td>
-			</tr>
-			<tr>
-				<td><input placeholder="1" type="text" class="rank" id="w1"></td>
-				<td><span class="point" id="pw1"></span></td>
-				<td><input placeholder="6" type="text" class="rank" id="w6"></td>
-				<td><span class="point" id="pw6"></span></td>
-				<td><input placeholder="11" type="text" class="rank" id="w11"></td>
-				<td><span class="point" id="pw11"></span></td>
-				<td><input placeholder="16" type="text" class="rank" id="w16"></td>
-				<td><span class="point" id="pw16"></span></td>
-				<td><input placeholder="21" type="text" class="rank" id="w21"></td>
-				<td><span class="point" id="pw21"></span></td>
-			</tr>
-			<tr>
-				<td><input placeholder="2" type="text" class="rank" id="w2"></td>
-				<td><span class="point" id="pw2"></span></td>
-				<td><input placeholder="7" type="text" class="rank" id="w7"></td>
-				<td><span class="point" id="pw7"></span></td>
-				<td><input placeholder="12" type="text" class="rank" id="w12"></td>
-				<td><span class="point" id="pw12"></span></td>
-				<td><input placeholder="17" type="text" class="rank" id="w17"></td>
-				<td><span class="point" id="pw17"></span></td>
-				<td><input placeholder="22" type="text" class="rank" id="w22"></td>
-				<td><span class="point" id="pw22"></span></td>
-			</tr>
-			<tr>
-				<td><input placeholder="3" type="text" class="rank" id="w3"></td>
-				<td><span class="point" id="pw3"></span></td>
-				<td><input placeholder="8" type="text" class="rank" id="w8"></td>
-				<td><span class="point" id="pw8"></span></td>
-				<td><input placeholder="13" type="text" class="rank" id="w13"></td>
-				<td><span class="point" id="pw13"></span></td>
-				<td><input placeholder="18" type="text" class="rank" id="w18"></td>
-				<td><span class="point" id="pw18"></span></td>
-				<td><input placeholder="23" type="text" class="rank" id="w23"></td>
-				<td><span class="point" id="pw23"></span></td>
-			</tr>
-			<tr>
-				<td><input placeholder="4" type="text" class="rank" id="w4"></td>
-				<td><span class="point" id="pw4"></span></td>
-				<td><input placeholder="9" type="text" class="rank" id="w9"></td>
-				<td><span class="point" id="pw9"></span></td>
-				<td><input placeholder="14" type="text" class="rank" id="w14"></td>
-				<td><span class="point" id="pw14"></span></td>
-				<td><input placeholder="19" type="text" class="rank" id="w19"></td>
-				<td><span class="point" id="pw19"></span></td>
-				<td><input placeholder="24" type="text" class="rank" id="w24"></td>
-				<td><span class="point" id="pw24"></span></td>
-			</tr>
-			<tr>
-				<td><input placeholder="5" type="text" class="rank" id="w5"></td>
-				<td><span class="point" id="pw5"></span></td>
-				<td><input placeholder="10" type="text" class="rank" id="w10"></td>
-				<td><span class="point" id="pw10"></span></td>
-				<td><input placeholder="15" type="text" class="rank" id="w15"></td>
-				<td><span class="point" id="pw15"></span></td>
-				<td><input placeholder="20" type="text" class="rank" id="w20"></td>
-				<td><span class="point" id="pw20"></span></td>
-				<td><input placeholder="25" type="text" class="rank" id="w25"></td>
-				<td><span class="point" id="pw25"></span></td>
-			</tr>
-		</table>
-		<br>
-		<h2>Total points</h2>
-		<h3 id="result">0</h3>
-		<br>
-		<h4>Generated link</h4>
-		<div><input type="text" id="link"></input><br><button type="button" class="btn btn-secondary"
-				onclick="copyLink()">Copy link</button></div>
-		<div id="copyResult"></div>
-		<br>
-		<h5>Calculation info</h5>
-		<p>The calculation is based on <a href="https://github.com/geri43/TrackmaniaSeasonPointCalculator/issues/1"
-				style="color:black;" target="_blank">zanaptak</a>'s formula:
-			<br>Rank 1-10: 40,000 / rank
-			<br>Rank >10: (4000 / 2 ^ (ceiling(log10(rank)) - 1)) * (10 ^ (ceiling(log10(rank)) - 1) / rank + 0.9)
-		</p>
-		<button type="button" class="btn btn-danger" onclick="reset()">Reset calculator</button>
+	</template>
+
+	<header class="d-flex justify-content-center py-3">
+		<span class="fs-4">Trackmania Season Point Calculator</span>
+	</header>
+
+	<div class="b-divider"></div>
+
+	<header class="d-flex justify-content-center py-3">
+		<div class="input-group" style="width: 430px;">
+			<input type="text" class="form-control" placeholder="player id" id="id-input">
+			<button class="btn btn-outline-secondary" type="button" id="id-button">Retrieve data</button>
+		  </div>		  
+	</header>
+
+	<div class="b-divider"></div>
+
+	<div class="container px-4 py-4">
+		<div class="row">
+			<div class="col">
+				<p style="background-color:#ffffff;padding:5px;"></p>
+			</div>
+			<div class="col">
+				<p style="background-color:#6efaa1;padding:5px;"></p>
+			</div>
+			<div class="col">
+				<p style="background-color:#0033ff;padding:5px;"></p>
+			</div>
+			<div class="col">
+				<p style="background-color:#ff0000;padding:5px;"></p>
+			</div>
+			<div class="col">
+				<p style="background-color:#000000;padding:5px;"></p>
+			</div>
+		</div>
+		<div id="row1" class="row"></div>
+		<div id="row2" class="row"></div>
+		<div id="row3" class="row"></div>
+		<div id="row4" class="row"></div>
+		<div id="row5" class="row"></div>
 	</div>
 </body>
 
