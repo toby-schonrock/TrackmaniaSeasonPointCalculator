@@ -116,9 +116,18 @@ class Api {
     }
 
     async refreshToken(live) {
-        logError(`${live ? "liveServices" : "Services"}Token out of date I think`);
-        console.log(live ? this.liveServicesToken : this.servicesToken)
-        throw new Error();
+        logInfo(`${live ? "LiveServices" : "Services"}Token refreshed`);
+        response = await fetch("https://prod.trackmania.core.nadeo.online/v2/authentication/token/refresh", {
+            method: "POST",
+            headers: {
+                Authorization: `nadeo_v1 t=${(live ? this.liveServicesToken : this.servicesToken).refreshToken}`
+            }
+        })
+        ValidateResponse(response, `token refresh`, true);
+        let token = await response.json();
+        if (live) this.liveServicesToken = new Token(token.accessToken, token.refreshToken);
+        else this.servicesToken = new Token(token.accessToken, token.refreshToken);
+        return live ? this.liveServicesToken : this.servicesToken;
     }
 
     async safeApiCall(url, data, live, label) {
@@ -132,8 +141,8 @@ class Api {
         data.headers["Authorization"] = `nadeo_v1 t=${(live ? this.liveServicesToken : this.servicesToken).token}`;
         let response = await fetch(url, data);
         if (response.status === 401) { // token out of date
-            console.log(await response.json());
-            data.headers["Authorization"] = `nadeo_v1 t=${this.refreshToken(live)}`;
+            console.log(await response.json()); // TODO remove
+            data.headers["Authorization"] = `nadeo_v1 t=${this.refreshToken(live).token}`;
             response = await fetch(url, data);
         }
         if (response.ok) {
