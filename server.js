@@ -38,6 +38,69 @@ async function ValidateResponse(response, request, kill = false) {
     }
 }
 
+class AsyncCachedDict {
+    getNew;
+    name = "";
+    dict = {};
+
+    constructor(name, getNew) {
+        this.name = name;
+        this.getNew = getNew;
+    }
+
+    async get(key) {
+        if (key in this.dict) {
+            logInfo(`${this.dict[key].name} found in ${this.name}`);
+            return { ok: true, obj: this.dict[key] };
+        }
+        let temp = await this.getNew(key);
+        if (temp.ok) {
+            this.dict[key] = temp.obj;
+            logInfo(`${temp.obj.name} added to ${this.name}`);
+            return { ok: true, obj: temp.obj };
+        }
+        return { ok: false, obj: {} }
+    }
+}
+
+class Track {
+    number = 0;
+    id = "";
+    uid = "";
+    name = "";
+
+    constructor(number, id, uid, name) {
+        this.number = number;
+        this.id = id;
+        this.uid = uid;
+        this.name = name;
+    }
+}
+
+class Campaign {
+    id = "";
+    name = "";
+    tracks = [];
+
+    constructor(id, name, tracks = []) {
+        this.id = id;
+        this.name = name;
+        this.tracks = tracks;
+    }
+}
+
+class Player {
+    id = "";
+    name = "";
+    timeStamp = "";
+
+    constructor(id, name = "", timeStamp = "") {
+        this.id = id;
+        this.name = name;
+        this.timeStamp = timeStamp;
+    }
+}
+
 class Token {
     token = "";
     refreshToken = "";
@@ -48,35 +111,12 @@ class Token {
     }
 }
 
-class Track {
-    number = 0;
-    id = "";
-    uid = "";
-    time = 0;
-    rank = 0;
-
-    constructor(number, id, uid) {
-        this.number = number;
-        this.id = id;
-        this.uid = uid;
-    }
-}
-
-class Player {
-    id = "";
-    name = "";
-
-    constructor(id, name = "") {
-        this.id = id;
-        this.name = name;
-    }
-}
-
 class Api {
     servicesToken = new Token("", "");
     liveServicesToken = new Token("", "");
 
-    campaignCache = {};
+    campaigns = new AsyncCachedDict("campaign dict", this.getCampaign.bind(this));
+    players = new AsyncCachedDict("player dict", this.getPlayer.bind(this));
     playerCache = {};
 
     async connect(credentials, userAgent) {
@@ -127,7 +167,6 @@ class Api {
         let token = await response.json();
         if (live) this.liveServicesToken = new Token(token.accessToken, token.refreshToken);
         else this.servicesToken = new Token(token.accessToken, token.refreshToken);
-        return live ? this.liveServicesToken : this.servicesToken;
     }
 
     async safeApiCall(url, data, live, label) {
@@ -142,7 +181,8 @@ class Api {
         let response = await fetch(url, data);
         if (response.status === 401) { // token out of date
             console.log(await response.json()); // TODO remove
-            data.headers["Authorization"] = `nadeo_v1 t=${this.refreshToken(live).token}`;
+            await this.refreshToken(live);
+            data.headers["Authorization"] = `nadeo_v1 t=${(live ? this.liveServicesToken : this.servicesToken).token}`;
             response = await fetch(url, data);
         }
         if (response.ok) {
@@ -158,46 +198,24 @@ class Api {
     }
 
     async getPlayer(accountId) {
-        if (accountId in this.playerCache) {
-            logInfo(`player ${this.playerCache[accountId].name} found in cache`)
-            return { ok: true, player: this.playerCache[accountId] };
-        } else {
-            let response = await this.safeApiCall(`https://prod.trackmania.core.nadeo.online/accounts/displayNames/?accountIdList=${accountId}`,
-                { method: "GET" }, false, `player ${accountId}`);
+        let response = await this.safeApiCall(`https://prod.trackmania.core.nadeo.online/accounts/displayNames/?accountIdList=${accountId}`,
+            { method: "GET" }, false, `player ${accountId}`);
 
-            if (!response.ok) return { ok: false, player: {} }; // couldn't retrieve
-
-            let player = new Player(accountId, response.data[0].displayName);
-            this.playerCache[accountId] = player;
-            logInfo(`player ${this.playerCache[accountId].name} added to cache`);
-            return { ok: true, player: player };
+        if (!response.ok || response.data.length !== 1) {
+            return { ok: false, obj: {} }; // couldn't retrieve
         }
+        return { ok: true, obj: new Player(accountId, response.data[0].displayName, response.data[0].timestamp) };
     }
 
-    async getCampaignRankings(campaign, accountId) {
-        let tracks = [];
-
-        let response = await this.getPlayer(accountId);
-        if (!response.ok) return {
-            status: { ok: false, message: "Couldn't retrieve player" },
-            player: {},
-            tracks: tracks
-        };
-        let player = response.player;
-
-        // fetch campaign call
-        response = await this.safeApiCall(
-            `https://live-services.trackmania.nadeo.live/api/token/campaign/official?offset=${campaign}&length=1`,
-            { method: "GET" }, true, `campaign ${campaign}`);
-        if (!response.ok) return {
-            status: { ok: false, message: "Couldn't retrieve campaign" },
-            player: player,
-            tracks: tracks
-        };
+    async getCampaign(count) {
+        let response = await this.safeApiCall(`https://live-services.trackmania.nadeo.live/api/token/campaign/official?offset=${count}&length=1`,
+            { method: "GET" }, true, `campaign ${count}`);
+        if (!response.ok) return { ok: false, obj: {} };
         let playlist = response.data.campaignList[0].playlist;
+        let campaign = new Campaign(response.data.campaignList[0].id, response.data.campaignList[0].name);
         let uids = [];
         for (const map of playlist) {
-            tracks.push(new Track(map.position + 1, "", map.mapUid));
+            campaign.tracks.push(new Track(map.position + 1, "", map.mapUid));
             uids.push(map.mapUid);
         }
 
@@ -206,33 +224,53 @@ class Api {
             `https://prod.trackmania.core.nadeo.online/maps/?mapUidList=${uids.join(",")}`,
             { method: "GET" }, false, "maps"
         );
-        if (!response.ok) return {
-            status: { ok: false, message: "Couldn't retrieve maps" },
-            player: player,
-            tracks: tracks
-        };
+        if (!response.ok) return { ok: false, obj: {} };
         for (const map of response.data) {
-            for (const track of tracks) {
+            for (const track of campaign.tracks) {
                 if (track.uid === map.mapUid) {
                     track.id = map.mapId;
+                    track.name = map.name;
                 }
             }
         }
+        return { ok: true, obj: campaign };
+    }
+
+    async getCampaignRankings(campaignCount, accountId) {
+        let pkg = {
+            status: { ok: false, message: "" },
+            player: {},
+            campaign: {}
+        }
+
+        let lookup = await this.players.get(accountId);
+        if (!lookup.ok) {
+            pkg.status.message = "Couldn't retrieve player";
+            return pkg;
+        }
+        pkg.player = lookup.obj;
+
+        // fetch campaign call
+        lookup = await this.campaigns.get(campaignCount);
+        if (!lookup.ok) {
+            pkg.status.message = "Couldn't retrieve campaign";
+            return pkg;
+        }
+        pkg.campaign = lookup.obj;
 
         // record call
         let mapIdList = []
-        for (const track of tracks) { mapIdList.push(track.id); }
-        response = await this.safeApiCall(
+        for (const track of pkg.campaign.tracks) { mapIdList.push(track.id); }
+        let response = await this.safeApiCall(
             `https://prod.trackmania.core.nadeo.online/mapRecords/?accountIdList=${accountId}&mapIdList=${mapIdList.join(",")}`,
             { method: "GET" }, false, `records`
         );
-        if (!response.ok) return {
-            status: { ok: false, message: "Couldn't retrieve records" },
-            player: player,
-            tracks: tracks
-        };
+        if (!response.ok) {
+            pkg.status.message = "Couldn't retrieve records";
+            return pkg;
+        }
         for (const record of response.data) {
-            for (const track of tracks) {
+            for (const track of pkg.campaign.tracks) {
                 if (track.id === record.mapId) {
                     track.time = record.recordScore.time;
                 }
@@ -242,7 +280,7 @@ class Api {
         // ranking call
         let scores = [];
         let body = { "maps": [] };
-        for (const track of tracks) {
+        for (const track of pkg.campaign.tracks) {
             scores.push(`scores[${track.uid}]=${track.time}`);
             body.maps.push({ "mapUid": track.uid, "groupUid": "Personal_Best" })
         }
@@ -254,25 +292,21 @@ class Api {
         },
             true, "rankings"
         );
-        if (!response.ok) return {
-            status: { ok: false, message: "Couldn't retrieve rankings" },
-            player: player,
-            tracks: tracks
-        };
+        if (!response.ok) {
+            pkg.status.message = "Couldn't retrieve rankings";
+            return pkg;
+        }
         for (const rank of response.data) {
-            for (const track of tracks) {
+            for (const track of pkg.campaign.tracks) {
                 if (track.uid === rank.mapUid && rank.zones[0].zoneName === "World") {
                     track.rank = rank.zones[0].ranking.position;
                     if (track.rank < 20000) --track.rank;
                 }
             }
         }
-        logSucces(`Rankings retrieved id - ${accountId} `)
-        return {
-            status: { ok: true, message: "Rankings retrieved" },
-            player: player,
-            tracks: tracks
-        };
+        logSucces(`Rankings retrieved for ${pkg.player.name}`)
+        pkg.status = { ok: true, message: "Rankings retrieved" };
+        return pkg;
     }
 };
 
@@ -304,7 +338,7 @@ server.listen(port, () => {
 io.on('connection', (socket) => {
     console.log(`User connected from socket ${socket.id} `);
     socket.on('RankingRequest', async (accountId) => {
-        console.log(`Ranking request id - ${accountId} `);
+        // console.log(`Ranking request id - ${accountId} `);
         socket.emit("RankingResponse", await nadeo.getCampaignRankings(0, accountId));
     });
 });
