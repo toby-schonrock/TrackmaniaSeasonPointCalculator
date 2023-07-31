@@ -1,7 +1,7 @@
 {
   "name": "trackmaniaseasonpointcalculator",
   "version": "1.0.0",
-  "description": "You can access the calculator here:\r https://geri43.github.io/TrackmaniaSeasonPointCalculator/",
+  "description": "",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,7 +10,6 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
-    "socket.io": "^4.7.1",
-    "sockets": "^0.4.2"
+    "socket.io": "^4.7.1"
   }
 }

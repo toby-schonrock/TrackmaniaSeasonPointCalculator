@@ -1,3 +1,4 @@
+const { error } = require('console');
 const express = require('express')
 const port = process.env.PORT || 3000;
 
@@ -6,6 +7,7 @@ const app = express();
 const dir = __dirname + '\\public';
 
 const http = require('http');
+const { exit } = require('process');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server);
@@ -18,15 +20,31 @@ function logSucces(msg) {
     console.log(`\x1b[32m${msg}\x1b[0m`);
 }
 
-async function ValidateResponse(response, request) {
+function logInfo(msg) {
+    console.log(`\x1b[34m${msg}\x1b[0m`);
+}
+
+async function ValidateResponse(response, request, kill = false) {
     if (response.ok) {
         // console.log(`${request} recieved`);
         return true;
     } else {
         logError(`${request} not recieved`);
+        console.log(response.status);
         console.log(response.statusText);
         console.log(await response.json());
+        if (kill) throw new error();
         return false;
+    }
+}
+
+class Token {
+    token = "";
+    refreshToken = "";
+
+    constructor(token, refreshToken) {
+        this.token = token;
+        this.refreshToken = refreshToken;
     }
 }
 
@@ -44,46 +62,122 @@ class Track {
     }
 }
 
+class Player {
+    id = "";
+    name = "";
+
+    constructor(id, name = "") {
+        this.id = id;
+        this.name = name;
+    }
+}
+
 class Api {
-    servicesToken = "";
-    liveServicesToken = "";
-    servicesRefresh = "";
-    liveServicesRefresh = "";
+    servicesToken = new Token("", "");
+    liveServicesToken = new Token("", "");
+
+    campaignCache = {};
+    playerCache = {};
 
     constructor() { }
 
-    async connect(username, password) {
-        let basic = `Basic ${btoa(`${username}:${password}`)}`;
-        let response = await this.getToken(basic, "NadeoServices")
+    async connect(credentials, userAgent) {
+        let basic = `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
+        let ticket = await this.getTicket(basic, userAgent);
+        let response = await this.getToken(ticket, "NadeoServices")
         this.servicesToken = response.accessToken;
         this.servicesRefresh = response.refreshToken;
-        response = await this.getToken(basic, "NadeoLiveServices")
+        response = await this.getToken(ticket, "NadeoLiveServices")
         this.liveServicesToken = response.accessToken;
         this.liveServicesRefresh = response.refreshToken;
     }
 
-    async getToken(basic, audience) {
-        let response = await fetch("https://prod.trackmania.core.nadeo.online/v2/authentication/token/basic", {
+    async getTicket(basic, userAgent) {
+        let response = await fetch("https://public-ubiservices.ubi.com/v3/profiles/sessions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": basic
-            },
-            body: JSON.stringify({ "audience": audience })
+                "Ubi-AppId": "86263886-327a-4328-ac69-527f0d20a237",
+                "Authorization": basic,
+                "User-Agent": userAgent
+            }
         })
-        ValidateResponse(response, `${audience} tokens`);
+        ValidateResponse(response, `ticket`, true);
+        return (await response.json()).ticket;
+    }
+
+    async getToken(ticket, audience) {
+        let response = await fetch("https://prod.trackmania.core.nadeo.online/v2/authentication/token/ubiservices", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `ubi_v1 t=${ticket}`
+            },
+            body: JSON.stringify({ audience: audience })
+        })
+        ValidateResponse(response, `${audience} tokens`, true);
         return await response.json();
     }
 
-    async getCampaignRankings(campaign, playerId) {
+    async refreshToken(live) {
+
+    }
+
+    async safeApiCall(url, data, live, label) {
+        if (this.servicesToken.token == "" || this.liveServicesToken.token == "") {
+            throw new error("need to call this.connect() before making fetch calls");
+        }
+        if (!("headers" in data && "method" in data.headers)) {
+            throw new error("invalid fetch call");
+        }
+        data.headers["Authorization"] = `ubi_v1 t=${live ? this.liveServicesToken.token : this.servicesToken.token}`;
+        let response = await fetch(url, data);
+        if (response.status === 400) {
+            logError("Token out of date I think");
+            throw new error();
+            // refreshToken(live)
+            // TODO deal with token refresh
+        }
+        if (response.ok) return { ok: true, data: await response.json() };
+        else {
+            logError(`${label} not recieved`);
+            logError(`status - ${response.status}`);
+            logError(`statusText - ${response.statusText}`);
+            console.log(await response.json());
+            return { ok: false, data: {} };
+        }
+    }
+
+    async getPlayer(accountId) {
+        if (accountId in this.playerCache) {
+            logInfo(`player ${this.playerCache[accountId].name} found in cache`)
+            return {ok: true, player: this.playerCache[accountId]};
+        } else {
+            let response = await this.safeApiCall(`https://prod.trackmania.core.nadeo.online/accounts/displayNames/?accountIdList=${accountId}`,
+                { method: "GET" }, false, `player ${accountId}`);
+            if (response.ok) {
+                let player = new Player(accountId, response.data[0].displayName);
+                return {ok: true, player: this.playerCache[accountId]};
+            }
+            this.playerCache[accountId] = new Player(accountId, playerName.displayName);
+            logInfo(`player ${this.playerCache[accountId].name} added to cache`)
+        }
+    }
+
+    async getCampaignRankings(campaign, accountId) {
         let tracks = [];
+        let player = await this.getPlayer(accountId);
 
         // fetch campaign call
         let response = await fetch(`https://live-services.trackmania.nadeo.live/api/token/campaign/official?offset=${campaign}&length=1`, {
             method: "GET",
             headers: { "Authorization": `nadeo_v1 t=${this.liveServicesToken}` }
         })
-        if (!await ValidateResponse(response, `campaign ${campaign}`)) return { status: { ok: false, message: `Couldn't retrieve campaign` }, tracks: {} };
+        if (!await ValidateResponse(response, `campaign ${campaign}`)) return {
+            status: { ok: false, message: "Couldn't retrieve campaign" },
+            player: player,
+            tracks: tracks
+        };
         let playlist = (await response.json()).campaignList[0].playlist;
         let uids = [];
         for (const map of playlist) {
@@ -96,7 +190,11 @@ class Api {
             method: "GET",
             headers: { "Authorization": `nadeo_v1 t=${this.servicesToken}` }
         })
-        if (!await ValidateResponse(response, "map ids")) return { status: { ok: false, message: "Couldn't retrieve maps" }, tracks: {} };
+        if (!await ValidateResponse(response, "map ids")) return {
+            status: { ok: false, message: "Couldn't retrieve maps" },
+            player: player,
+            tracks: tracks
+        };
         let mapList = await response.json()
         for (const map of mapList) {
             for (const track of tracks) {
@@ -109,11 +207,15 @@ class Api {
         // record call
         let mapIdList = []
         for (const track of tracks) { mapIdList.push(track.id); }
-        response = await fetch(`https://prod.trackmania.core.nadeo.online/mapRecords/?accountIdList=${playerId}&mapIdList=${mapIdList.join(",")}`, {
+        response = await fetch(`https://prod.trackmania.core.nadeo.online/mapRecords/?accountIdList=${accountId}&mapIdList=${mapIdList.join(",")}`, {
             method: "GET",
             headers: { "Authorization": `nadeo_v1 t=${this.servicesToken}` }
         })
-        if (!await ValidateResponse(response, "records")) return { status: { ok: false, message: "Couldn't retrieve records" }, tracks: {} };
+        if (!await ValidateResponse(response, "records")) return {
+            status: { ok: false, message: "Couldn't retrieve records" },
+            player: player,
+            tracks: tracks
+        };
         let records = await response.json()
         for (const record of records) {
             for (const track of tracks) {
@@ -138,7 +240,11 @@ class Api {
             },
             body: JSON.stringify(body)
         })
-        if (!await ValidateResponse(response, "rankings")) return { status: { ok: false, message: "Couldn't retrieve rankings" }, tracks: {} };
+        if (!await ValidateResponse(response, "rankings")) return {
+            status: { ok: false, message: "Couldn't retrieve rankings" },
+            player: player,
+            tracks: tracks
+        };
         let rankings = await response.json();
         for (const rank of rankings) {
             for (const track of tracks) {
@@ -148,23 +254,29 @@ class Api {
                 }
             }
         }
-        logSucces(`Rankings retrieved id - ${playerId}`)
-        return { status: { ok: true, message: "Rankings retrieved" }, tracks: tracks };
+        logSucces(`Rankings retrieved id - ${accountId}`)
+        return {
+            status: { ok: true, message: "Rankings retrieved" },
+            player: player,
+            tracks: tracks
+        };
     }
 };
 
 let nadeo = new Api();
-// get credentials
+const userAgent = "TrackmaniaSeasonPointCalculator / tobias@schonrocks.com";
+
 const fs = require('fs');
-let password;
+let credentials;
 try {
-    password = fs.readFileSync('cred.txt', 'utf8');
-    console.log(`password: ${password.toString()}`);
+    let raw = fs.readFileSync('creds.json', 'utf8');
+    credentials = JSON.parse(raw);
+    if (!("username" in credentials && "password" in credentials)) throw new error("credentials file invalid")
 } catch (e) {
     console.log('Error:', e.stack);
 }
 
-nadeo.connect("SeasonPointCalculator", password);
+nadeo.connect(credentials, userAgent);
 
 app.get('/', (req, res) => {
     res.sendFile(dir.concat('\\views\\index.html'));
@@ -178,8 +290,8 @@ server.listen(port, () => {
 
 io.on('connection', (socket) => {
     console.log(`User connected from socket ${socket.id}`);
-    socket.on('RankingRequest', async (playerId) => {
-        console.log(`Ranking request id - ${playerId}`);
-        socket.emit("RankingResponse", await nadeo.getCampaignRankings(0, playerId));
+    socket.on('RankingRequest', async (accountId) => {
+        console.log(`Ranking request id - ${accountId}`);
+        socket.emit("RankingResponse", await nadeo.getCampaignRankings(0, accountId));
     });
 });

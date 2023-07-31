@@ -34,11 +34,17 @@
 						<div class="input-group">
 							<span class="input-group-text">points</span>
 							<input class="form-control" type="text" value="0" id="points-display" readonly>
-						</div>
+						</div> 
 					</div>
 				</div>
 			</div>
 		</div>
+	</template>
+
+	<template id="player-details-template">
+		<header class="d-flex justify-content-center py-3 player-details">
+			<p class="fs-4 player-id">player-id</p>
+		</header>
 	</template>
 
 	<header class="d-flex justify-content-center py-3">
@@ -47,11 +53,13 @@
 
 	<div class="b-divider"></div>
 
+	<div class="container px-4 py-4 player-details-section"></div>
+
 	<header class="d-flex justify-content-center py-3">
 		<div class="input-group" style="width: 430px;">
-			<input type="text" class="form-control" placeholder="player id" id="id-input">
+			<input type="text" class="form-control" placeholder="Account Id" id="id-input">
 			<button class="btn btn-outline-secondary" type="button" id="id-button">Retrieve data</button>
-		  </div>		  
+		</div>
 	</header>
 
 	<div class="b-divider"></div>
