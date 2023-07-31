@@ -1,4 +1,4 @@
-const { error } = require('console');
+const { error, log } = require('console');
 const express = require('express')
 const port = process.env.PORT || 3000;
 
@@ -79,13 +79,12 @@ class Api {
     campaignCache = {};
     playerCache = {};
 
-    constructor() { }
-
     async connect(credentials, userAgent) {
         let basic = `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
         let ticket = await this.getTicket(basic, userAgent);
         this.servicesToken = await this.getToken(ticket, "NadeoServices")
         this.liveServicesToken = await this.getToken(ticket, "NadeoLiveServices")
+        console.log("Connected to nadeo");
     }
 
     async getTicket(basic, userAgent) {
@@ -113,32 +112,34 @@ class Api {
         })
         ValidateResponse(response, `${audience} tokens`, true);
         let token = await response.json();
-        console.log(token);
         return new Token(token.accessToken, token.refreshToken);
     }
 
     async refreshToken(live) {
-
+        logError(`${live ? "liveServices" : "Services"}Token out of date I think`);
+        console.log(live ? this.liveServicesToken : this.servicesToken)
+        throw new Error();
     }
 
     async safeApiCall(url, data, live, label) {
-        if (this.servicesToken.token == "" || this.liveServicesToken.token == "") {
+        if (this.servicesToken.token === "" || this.liveServicesToken.token === "") {
             throw new Error("need to call this.connect() before making fetch calls");
         }
         if (!("method" in data)) {
             throw new Error("invalid fetch call");
         }
         if (!("headers" in data)) data.headers = {};
-        data.headers["Authorization"] = `ubi_v1 t=${live ? this.liveServicesToken.token : this.servicesToken.token}`;
+        data.headers["Authorization"] = `nadeo_v1 t=${(live ? this.liveServicesToken : this.servicesToken).token}`;
         let response = await fetch(url, data);
-        if (response.status === 400) {
-            logError("Token out of date I think");
-            throw new Error();
-            // refreshToken(live)
-            // TODO deal with token refresh
+        if (response.status === 401) { // token out of date
+            console.log(await response.json());
+            data.headers["Authorization"] = `nadeo_v1 t=${this.refreshToken(live)}`;
+            response = await fetch(url, data);
         }
-        if (response.ok) return { ok: true, data: await response.json() };
-        else {
+        if (response.ok) {
+            // console.log(`${label} recieved`);
+            return { ok: true, data: await response.json() };
+        } else {
             logError(`${label} not recieved`);
             logError(`status - ${response.status}`);
             logError(`statusText - ${response.statusText}`);
@@ -154,14 +155,13 @@ class Api {
         } else {
             let response = await this.safeApiCall(`https://prod.trackmania.core.nadeo.online/accounts/displayNames/?accountIdList=${accountId}`,
                 { method: "GET" }, false, `player ${accountId}`);
-            
+
             if (!response.ok) return { ok: false, player: {} }; // couldn't retrieve
 
             let player = new Player(accountId, response.data[0].displayName);
             this.playerCache[accountId] = player;
             logInfo(`player ${this.playerCache[accountId].name} added to cache`);
             return { ok: true, player: player };
-
         }
     }
 
@@ -177,7 +177,7 @@ class Api {
         let player = response.player;
 
         // fetch campaign call
-        response = this.safeApiCall(
+        response = await this.safeApiCall(
             `https://live-services.trackmania.nadeo.live/api/token/campaign/official?offset=${campaign}&length=1`,
             { method: "GET" }, true, `campaign ${campaign}`);
         if (!response.ok) return {
@@ -193,7 +193,7 @@ class Api {
         }
 
         // map id call
-        response = this.safeApiCall(
+        response = await this.safeApiCall(
             `https://prod.trackmania.core.nadeo.online/maps/?mapUidList=${uids.join(",")}`,
             { method: "GET" }, false, "maps"
         );
@@ -213,7 +213,7 @@ class Api {
         // record call
         let mapIdList = []
         for (const track of tracks) { mapIdList.push(track.id); }
-        response = this.safeApiCall(
+        response = await this.safeApiCall(
             `https://prod.trackmania.core.nadeo.online/mapRecords/?accountIdList=${accountId}&mapIdList=${mapIdList.join(",")}`,
             { method: "GET" }, false, `records`
         );
@@ -237,15 +237,15 @@ class Api {
             scores.push(`scores[${track.uid}]=${track.time}`);
             body.maps.push({ "mapUid": track.uid, "groupUid": "Personal_Best" })
         }
-        response = this.safeApiCall(
-            `https://prod.trackmania.core.nadeo.online/mapRecords/?accountIdList=${accountId}&mapIdList=${mapIdList.join(",")}`, {
+        response = await this.safeApiCall(
+            `https://live-services.trackmania.nadeo.live/api/token/leaderboard/group/map?${scores.join("&")}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
         },
             true, "rankings"
         );
-        if (response.ok) return {
+        if (!response.ok) return {
             status: { ok: false, message: "Couldn't retrieve rankings" },
             player: player,
             tracks: tracks
@@ -258,7 +258,7 @@ class Api {
                 }
             }
         }
-        logSucces(`Rankings retrieved id - ${accountId}`)
+        logSucces(`Rankings retrieved id - ${accountId} `)
         return {
             status: { ok: true, message: "Rankings retrieved" },
             player: player,
@@ -293,9 +293,9 @@ server.listen(port, () => {
 })
 
 io.on('connection', (socket) => {
-    console.log(`User connected from socket ${socket.id}`);
+    console.log(`User connected from socket ${socket.id} `);
     socket.on('RankingRequest', async (accountId) => {
-        console.log(`Ranking request id - ${accountId}`);
+        console.log(`Ranking request id - ${accountId} `);
         socket.emit("RankingResponse", await nadeo.getCampaignRankings(0, accountId));
     });
 });
